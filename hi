@@ -1,0 +1,552 @@
+<?php
+// Enable error reporting for debugging purposes
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+session_start();
+
+if (!isset($_SESSION["username"])) {
+    header("Location: login1.php");
+    exit();
+}
+
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "amogh";
+
+$conn = new mysqli($servername, $username, $password, $dbname);
+
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
+
+if (isset($_POST['delete_id'])) {
+    $deleteId = $_POST['delete_id'];
+
+    // Get room and bed information before deletion
+    $getRoomBedSQL = "SELECT room, bed FROM users WHERE Id = $deleteId";
+    $getRoomBedResult = $conn->query($getRoomBedSQL);
+    if ($getRoomBedResult->num_rows > 0) {
+        $row = $getRoomBedResult->fetch_assoc();
+        $roomToDelete = $row['room'];
+        $bedToDelete = $row['bed'];
+
+        // Update room and bed status to 'vacant' before deleting the user
+        $updateRoomSQL = "UPDATE house SET status = 'Vacant' WHERE room = '$roomToDelete' AND bed = '$bedToDelete'";
+        $conn->query($updateRoomSQL);
+    }
+
+    $deleteSql = "DELETE FROM users WHERE Id = $deleteId";
+
+    if ($conn->query($deleteSql) === TRUE) {
+        $resetAutoIncrementSql = "ALTER TABLE users AUTO_INCREMENT = 1";
+        $conn->query($resetAutoIncrementSql);
+
+        echo '<script>alert("Record deleted successfully.");</script>';
+        header("Location: admin.php");
+    } else {
+        echo '<script>alert("Error deleting record: ' . $conn->error . '");</script>';
+    }
+}
+
+if (isset($_POST['submit_payment'])) {
+    // Collect user's basic information
+    $userId = $_POST['user_id'];
+    $name = $_POST['user_name'];
+    $room = $_POST['user_room'];
+    $bed = $_POST['user_bed'];
+    $mobileNumber = $_POST['user_phone'];
+
+    // Collect payment information
+    $expected = $_POST['expected'];
+    $paid = $_POST['paid'];
+    $remaining = $_POST['remaining'];
+    $balanceDate = $_POST['balance'];
+
+    // Validate and sanitize the data if needed
+
+    // Insert payment information into the payments table
+    $insertPaymentSQL = "INSERT INTO payments (user_id, name, room, bed, mobile_number, expected, paid, remaining, balance_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    $stmtPayment = $conn->prepare($insertPaymentSQL);
+    $stmtPayment->bind_param("isssiddss", $userId, $name, $room, $bed, $mobileNumber, $expected, $paid, $remaining, $balanceDate);
+
+    if ($stmtPayment->execute()) {
+
+        
+        // Sending SMS notification
+        require __DIR__ . '/vendor/autoload.php';
+        // Make sure to download Twilio PHP library
+
+        // Your Twilio credentials
+        $accountSid = 'ACab40026c29c448ddc17e39b72f851bc0';
+        $authToken = 'd3c8fa7e130733acf722621763f3509c';
+        $twilioNumber = '+12407668051';
+
+        // Create a Twilio client
+        $twilio = new Twilio\Rest\Client($accountSid, $authToken);
+
+        $smsMessage = "Payment received from $name. Remaining balance: $remaining";
+
+        // Recipient's phone number (replace with the actual mobile number)
+        $recipientNumber = $_POST['user_phone'];
+        // Replace with the actual recipient's phone number
+
+        try {
+            // Send SMS
+            $message = $twilio->messages->create(
+                $recipientNumber,
+                [
+                    'from' => $twilioNumber,
+                    'body' => $smsMessage,
+                ]
+            );
+
+           
+
+            // Output a success message
+            echo '<script>alert("Payment information submitted successfully. SMS sent.");</script>';
+            header("Location: payment.php");
+        } catch (Exception $e) {
+            // Handle exception
+            echo '<script>alert("Error sending SMS: ' . $e->getMessage() . '");</script>';
+        }
+
+        $stmtPayment->close();
+    } else {
+        echo '<script>alert("Error submitting payment information: ' . $stmtPayment->error . '");</script>';
+    }
+}
+?>
+
+
+
+<tbody>
+            <?php
+            $sql = "SELECT * FROM users ORDER BY Id DESC";
+            $result = $conn->query($sql);
+                if ($result->num_rows > 0) {
+                    while ($row = $result->fetch_assoc()) {
+                        echo "<tr>
+                            <td>" . $row["Id"] . "</td>
+                            <td>" . $row["Name"] . "</td>
+                            <td>" . $row["Room"] . "</td>
+                            <td>" . $row["Bed"] . "</td>
+                            <td>" . $row["Email"] . "</td>
+                            <td>" . $row["PhoneNumber"] . "</td>
+                            <td>
+                                <a href='download.php?file=Resume/" . $row["Resume"] . "' class='download-button'>
+                                    <i class='fa fa-download'></i>  Adharcard
+                                </a>
+                            </td>
+                            <td>
+                                <div style='display: flex; align-items: center;'>
+                                    <img width='90px' height='80px' src='Photo/" . $row["Photo"] . "' alt='Photo' style='max-width: 100px; max-height: 100px; margin-right: 10px;'>
+                                    <a  href='download.php?file=Photo/" . $row["Photo"] . "' class='download-button'>
+                                        <i class='fa fa-download'></i>  Photo
+                                    </a>
+                                </div>
+                            </td>
+                            <td>" . $row["Address"] . "</td>
+                            <td>" . $row["entry"] . "</td>
+                            <td>
+                                <form method='post' action=''>
+                                    <input type='hidden' name='delete_id' value='" . $row["Id"] . "'>
+                                    <button type='submit' style='color: red;' class='delete-button'>
+                                    <i class='fa fa-trash' style='font-size: 20px; text-align:center'></i>
+                                </button>
+                                
+                                </form>
+                            </td>
+                          
+<td>
+    <a href='view.php?id=" . $row["Id"] . "' class='view-button'>
+        <i class='fa fa-eye'></i> 
+    </a>
+</td>
+                        </tr>";
+                    }
+                } else {
+                    echo "<tr><td colspan='9'>No data available.</td></tr>";
+                }
+                ?>
+            </tbody>
+
+
+
+
+            <?php
+session_start();
+$_SESSION["registration_success"] = true;
+
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "amogh";
+
+try {
+    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    $name = $_POST['Name'];
+    $email = $_POST['Email'];
+    $phoneNumber = $_POST['PhoneNumber'];
+    $room = $_POST['room'];
+
+    $resume = $_FILES["uploadfile"]["name"];
+    $tempnamea = $_FILES["uploadfile"]["tmp_name"];
+    $foldera = "./Resume/" . $resume;
+    $photo = $_FILES["uploadfilea"]["name"];
+    $tempname = $_FILES["uploadfilea"]["tmp_name"];
+    $folder = "./Photo/" . $photo;
+    $address = $_POST['address'];
+    $entry = $_POST['entry'];
+    $price = $_POST['price'];
+
+    $roomInfo = explode(" - ", $_POST["room"]); // Split room and bed
+    $room = $roomInfo[0];
+    $bed = $roomInfo[1];
+
+    // Using prepared statement to prevent SQL injection
+    $sql = "INSERT INTO users (Name, room, bed, Email, PhoneNumber,  resume, photo, address, entry, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([$name, $room, $bed, $email, $phoneNumber,  $resume, $photo, $address, $entry, $price]);
+
+    // Update room status to 'occupied'
+    $updateHouseSQL = "UPDATE house SET status = 'Occupied' WHERE room = :room AND bed = :bed";
+        $updateHouseStmt = $conn->prepare($updateHouseSQL);
+        $updateHouseStmt->bindParam(":room", $room);
+        $updateHouseStmt->bindParam(":bed", $bed);
+        $updateHouseStmt->execute();
+
+    move_uploaded_file($tempnamea, $foldera);
+    move_uploaded_file($tempname, $folder);
+
+    // Redirect to admin.php after successful registration
+    header("Location: admin.php");
+    exit();
+} catch(PDOException $e) {
+    echo $sql . "<br>" . $e->getMessage();
+}
+
+$conn = null;
+?>
+
+
+<script>
+function startTimer(duration, display, remainingInput, mobileNumber, price, formId) {
+    var timer;
+    var userId = display.getAttribute('data-user-id');
+
+    var storedTime = localStorage.getItem('timer_' + mobileNumber);
+
+    if (storedTime !== null) {
+        timer = parseInt(storedTime, 10);
+    } else {
+        timer = duration;
+    }
+
+    function updateTimer() {
+        var minutes = parseInt(timer / 60, 10);
+        var seconds = parseInt(timer % 60, 10);
+
+        minutes = minutes < 10 ? "0" + minutes : minutes;
+        seconds = seconds < 10 ? "0" + seconds : seconds;
+
+        display.textContent = minutes + ":" + seconds;
+
+        localStorage.setItem('timer_' + mobileNumber, timer);
+
+        if (timer <= 0) {
+            clearInterval(interval);
+            localStorage.removeItem('timer_' + mobileNumber);
+            timer = duration; // Restart the timer when it reaches 0
+            interval = setInterval(updateTimer, 1000);
+
+            // Check if the timer is 00:00, then update the "remaining" textbox
+            if (minutes == "00" && seconds == "00") {
+                remainingInput.value = (parseFloat(remainingInput.value) + price).toFixed(2);
+            }
+
+           
+        }
+
+        timer--;
+    }
+
+    updateTimer();
+    var interval = setInterval(updateTimer, 1000);
+}
+
+window.onload = function () {
+    var oneMinute = 60;
+    var displays = document.querySelectorAll('.timer-display');
+
+    displays.forEach(function (display) {
+        var userId = display.getAttribute('data-user-id');
+        var mobileNumber = display.getAttribute('data-mobile-number');
+        var remainingInput = document.querySelector('.remaining-input[data-user-id="' + userId + '"]');
+        var price = parseFloat(remainingInput.getAttribute('data-price'));
+        var formId = 'myForm_' + userId; // Unique form ID based on user ID
+
+        // Add unique form ID to each form
+        document.querySelector('.remaining-input[data-user-id="' + userId + '"]').form.id = formId;
+
+        startTimer(oneMinute, display, remainingInput, mobileNumber, price, formId);
+    });
+};
+
+</script>
+
+
+
+
+
+
+<td>
+                <input name='remaining' data-user-id='" . $row["Id"] . "' class='remaining-input' style='width:100%; border:1px solid red' 
+                    value='" . $lastRemaining . "' data-price='" . $row["price"] . "' data-original-remaining='" . $lastRemaining . "'>
+            </td>
+                    
+        
+                 
+                <td class='timer-display' data-user-id='" . $row["Id"] . "' data-mobile-number='" . $row["PhoneNumber"] . "' id='timer'></td>
+
+
+        
+                    <td>
+                        <input type='date' name='balance' />
+                    </td>
+                    
+        
+                    <td>
+                    <form method='post' action='submit_payment.php' id='form_" . $row["Id"] . "'>
+                        <input type='hidden' name='submit_payment' id='submit_payment_" . $row["Id"] . "' value='" . $row["Id"] . "'>
+                        <button type='submit' name='submit_payment' value='Submit' style='padding:5px; background-color:green; border:1px solid green; color:white; border-radius:5px; cursor:pointer'>SUBMIT</button>
+                    </form>
+                </td>
+                
+                    <td>
+                        <a href='view.php?id=" . $row["Id"] . "' class='view-button'><i class='fa fa-eye'></i></a>
+                    </td>
+                    <td>
+                        <form method='post' action='payment.php' >
+                            <input type='hidden' name='delete_id' value='" . $row["Id"] . "'>
+                            <button type='submit' style='color: red;' class='delete-button' >
+                                <i class='fa fa-trash'  style='font-size: 20px; text-align:center'></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr></form>";
+            }
+        } else {
+            echo "<tr><td colspan='9'>No data available.</td></tr>";
+        }
+        ?>
+        
+           
+           
+            </tbody>
+        </table>
+    </main>
+
+<!-- Add this script in the <head> section of your HTML document -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Get all paid input elements
+    var paidInputs = document.querySelectorAll('input[name="paid"]');
+
+    // Add event listener for each paid input
+    paidInputs.forEach(function (paidInput) {
+        paidInput.addEventListener('input', function () {
+            // Get the corresponding remaining input element
+            var remainingInput = this.closest('tr').querySelector('input[name="remaining"]');
+
+            // Get the original remaining balance
+            var originalRemaining = parseFloat(remainingInput.getAttribute('data-original-remaining'));
+
+            // Get the paid amount
+            var paidAmount = parseFloat(this.value) || 0;
+
+            // Update the remaining balance
+            var newRemaining = (originalRemaining - paidAmount).toFixed(2);
+
+            // Set the updated remaining balance in the input field
+            remainingInput.value = newRemaining;
+        });
+    });
+});
+</script>
+
+
+
+
+
+<script>
+    var oneMinute = 60; // Define oneMinute variable
+
+    function startTimer(oneMinute, display, remainingInput, mobileNumber, price, formId, userId) {
+        var timer;
+        var interval = 1000;
+
+        function updateTimer() {
+            console.log("Updating timer for user ID: " + userId);
+
+            fetch("timer_server.php?get_timer&user_id=" + userId)
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Server response:", data);
+
+                    var elapsed_time = data.elapsed_time || 0;
+
+                    var minutes = parseInt(elapsed_time / 60, 10);
+                    var seconds = parseInt(elapsed_time % 60, 10);
+
+                    minutes = minutes < 10 ? "0" + minutes : minutes;
+                    seconds = seconds < 10 ? "0" + seconds : seconds;
+
+                    display.textContent = minutes + ":" + seconds;
+
+                    // Check if the timer has reached 01:00
+                    if (minutes == 1 && seconds == 0) {
+                        remainingInput.value = (parseFloat(remainingInput.value) + price).toFixed(2);
+                        insertPaymentRecord(formId);
+                    }
+
+                    console.log("Timer updated successfully.");
+                })
+                .catch(error => {
+                    console.error("Error fetching timer:", error);
+                });
+        }
+
+        updateTimer(); // Initial call
+        timer = setInterval(updateTimer, interval);
+    }
+
+   
+
+    function insertPaymentRecord(userId) {
+    var form = document.getElementById(formId);
+
+    if (form) {
+        var formData = new FormData(form);
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "submit_payment.php", true);
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState == 4 && xhr.status == 200) {
+                // Handle the response if needed
+                console.log(xhr.responseText);
+            }
+        };
+
+        xhr.send(formData);
+    }
+}
+
+
+window.addEventListener('load', function () {
+    var oneMinute = 60;
+    var displays = document.querySelectorAll('.timer-display');
+
+    displays.forEach(function (display) {
+        var userId = display.getAttribute('data-user-id');
+        var mobileNumber = display.getAttribute('data-mobile-number');
+        var remainingInput = document.querySelector('.remaining-input[data-user-id="' + userId + '"]');
+        var price = parseFloat(remainingInput.getAttribute('data-price'));
+        var formId = 'myForm_' + userId;
+
+        document.querySelector('.remaining-input[data-user-id="' + userId + '"]').form.id = formId;
+
+        startTimer(oneMinute, display, remainingInput, mobileNumber, price, formId, userId);
+    });
+});
+</script>
+
+
+
+<script>
+function startTimer(duration, display, remainingInput, mobileNumber, price, formId) {
+    var timer;
+    var userId = display.getAttribute('data-user-id');
+
+    var storedTime = sessionStorage.getItem('timer_' + mobileNumber);
+
+    if (storedTime !== null) {
+        timer = parseInt(storedTime, 10);
+    } else {
+        timer = duration;
+    }
+
+    function updateTimer() {
+        var minutes = parseInt(timer / 60, 10);
+        var seconds = parseInt(timer % 60, 10);
+
+        minutes = minutes < 10 ? "0" + minutes : minutes;
+        seconds = seconds < 10 ? "0" + seconds : seconds;
+
+        display.textContent = minutes + ":" + seconds;
+
+        sessionStorage.setItem('timer_' + mobileNumber, timer);
+
+        if (timer <= 0) {
+            clearInterval(interval);
+            sessionStorage.removeItem('timer_' + mobileNumber);
+            timer = duration; // Restart the timer when it reaches 0
+            interval = setInterval(updateTimer, 1000);
+
+            // Check if the timer is 00:00, then update the "remaining" textbox
+            if (minutes == "00" && seconds == "00") {
+                remainingInput.value = (parseFloat(remainingInput.value) + price).toFixed(2);
+
+                // Insert record into the payments table
+                insertPaymentRecord(formId);
+            }
+        }
+
+        timer--;
+    }
+
+    updateTimer();
+    var interval = setInterval(updateTimer, 1000);
+}
+
+function insertPaymentRecord(formId) {
+    var form = document.getElementById(formId);
+
+    if (form) {
+        var formData = new FormData(form);
+
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "submit_payment.php", true);
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState == 4 && xhr.status == 200) {
+                // Handle the response if needed
+                console.log(xhr.responseText);
+            }
+        };
+
+        xhr.send(formData);
+    }
+}
+
+window.addEventListener('load', function () {
+    var oneMinute = 60;
+    var displays = document.querySelectorAll('.timer-display');
+
+    displays.forEach(function (display) {
+        var userId = display.getAttribute('data-user-id');
+        var mobileNumber = display.getAttribute('data-mobile-number');
+        var remainingInput = document.querySelector('.remaining-input[data-user-id="' + userId + '"]');
+        var price = parseFloat(remainingInput.getAttribute('data-price'));
+        var formId = 'myForm_' + userId;
+
+        document.querySelector('.remaining-input[data-user-id="' + userId + '"]').form.id = formId;
+
+        startTimer(oneMinute, display, remainingInput, mobileNumber, price, formId);
+    });
+});
+</script>
+
